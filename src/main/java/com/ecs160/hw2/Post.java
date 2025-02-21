@@ -2,10 +2,8 @@ package com.ecs160.hw2;
 
 import java.util.ArrayList;
 import java.util.List;
-import com.ecs160.hw2.persistence.Persistable;
-import com.ecs160.hw2.persistence.PersistableId;
-import com.ecs160.hw2.persistence.PersistableField;
-import com.ecs160.hw2.persistence.PersistableListField;
+
+import com.ecs160.hw2.persistence.*;
 
 @Persistable
 public class Post {
@@ -22,6 +20,7 @@ public class Post {
     private Record record;
 
     @PersistableListField(className = "com.ecs160.hw2.Post")
+    @LazyLoad
     private List<Post> replies;
 
     // Default Constructor
