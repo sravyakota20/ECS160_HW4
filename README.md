@@ -2,6 +2,8 @@
 
   - Converted PostgreSQL to Redis.
   - Commented out unit tests.
+    
+# Sravya Kota (02/20)
   - Code assumes the input file name as "input.json".
   - 
     
