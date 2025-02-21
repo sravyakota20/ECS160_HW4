@@ -12,7 +12,7 @@ class PostTest {
     @BeforeEach
     void setUp() {
         Record record = new Record("Test content");
-        post = new Post(101, 5, record);
+        post = new Post(101, "5", record.getText());
     }
 
     @AfterEach
