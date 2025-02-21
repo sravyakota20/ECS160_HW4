@@ -7,3 +7,5 @@
   - Code assumes the input file name as "input.json".
   - Annotation classes are in the persistence package.
   - Added LazyLoad annotation.
+  - Enabled Lazyload on Session and used Dynamic Proxy
+  - input.json is not checked into the repository
