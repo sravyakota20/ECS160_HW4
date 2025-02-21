@@ -1,8 +1,16 @@
-package com.ecs160.hw2.persistence;
+package com.ecs160.hw2;
 
-import com.ecs160.hw2.Post;
+import com.ecs160.hw2.persistence.Persistable;
+import com.ecs160.hw2.persistence.PersistableField;
+import com.ecs160.hw2.persistence.PersistableId;
+import com.ecs160.hw2.persistence.PersistableListField;
+import com.ecs160.hw2.persistence.LazyLoad;
+import javassist.util.proxy.MethodHandler;
+import javassist.util.proxy.Proxy;
+import javassist.util.proxy.ProxyFactory;
 import redis.clients.jedis.Jedis;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.*;
 
 public class Session {
@@ -20,7 +28,7 @@ public class Session {
         if (obj.getClass().isAnnotationPresent(Persistable.class)) {
             sessionObjects.add(obj);
         } else {
-        throw new IllegalArgumentException("Class is not persistable: " + obj.getClass().getName());
+            throw new IllegalArgumentException("Class is not persistable: " + obj.getClass().getName());
         }
     }
 
@@ -33,7 +41,6 @@ public class Session {
     private void persistObject(Object obj) {
         Class<?> clazz = obj.getClass();
         String postKey = "post:" + getId(obj);
-
         for (Field field : clazz.getDeclaredFields()) {
             field.setAccessible(true);
             try {
@@ -69,29 +76,34 @@ public class Session {
     public Object load(Object obj) {
         String postKey = "post:" + getId(obj);
         Map<String, String> data = jedis.hgetAll(postKey);
-
         if (data.isEmpty()) return null;
 
         try {
             Class<?> clazz = obj.getClass();
             Object instance = clazz.getDeclaredConstructor().newInstance();
-
             for (Field field : clazz.getDeclaredFields()) {
                 field.setAccessible(true);
                 if (field.isAnnotationPresent(PersistableField.class) || field.isAnnotationPresent(PersistableId.class)) {
                     field.set(instance, castValue(field.getType(), data.get(field.getName())));
                 } else if (field.isAnnotationPresent(PersistableListField.class)) {
-                    List<Post> replies = new ArrayList<>();
-                    if (data.containsKey("replyIds")) {
-                        for (String id : data.get("replyIds").split(",")) {
-                            if (!id.isEmpty()) {
-                                Post reply = new Post();
-                                reply.setPostId(Integer.parseInt(id));
-                                replies.add(reply);
+                    String replyIdsStr = data.get("replyIds");
+                    boolean isLazy = field.isAnnotationPresent(LazyLoad.class);
+                    if (isLazy) {
+                        List<Post> lazyProxy = createLazyLoadingProxy(replyIdsStr);
+                        field.set(instance, lazyProxy);
+                    } else {
+                        List<Post> replies = new ArrayList<>();
+                        if (replyIdsStr != null) {
+                            for (String id : replyIdsStr.split(",")) {
+                                if (!id.isEmpty()) {
+                                    Post reply = new Post();
+                                    reply.setPostId(Integer.parseInt(id));
+                                    replies.add(reply);
+                                }
                             }
                         }
+                        field.set(instance, replies);
                     }
-                    field.set(instance, replies);
                 }
             }
             return instance;
@@ -101,41 +113,20 @@ public class Session {
         }
     }
 
-    private String getPrimaryKeyValue(Object obj) {
-        for (Field field : obj.getClass().getDeclaredFields()) {
-            if (field.isAnnotationPresent(PersistableId.class)) {
-                try {
-                    field.setAccessible(true);
-                    return "object:" + field.get(obj).toString();
-                } catch (IllegalAccessException e) {
-                    e.printStackTrace();
-                }
-            }
+    private List<Post> createLazyLoadingProxy(String replyIdsStr) {
+        final List<Post> delegate = new ArrayList<>();
+        final String[] replyIds = (replyIdsStr == null || replyIdsStr.isEmpty()) ? new String[0] : replyIdsStr.split(",");
+        ProxyFactory factory = new ProxyFactory();
+        factory.setInterfaces(new Class[]{List.class});
+        Class<?> proxyClass = factory.createClass();
+        List<Post> proxyInstance = null;
+        try {
+            proxyInstance = (List<Post>) proxyClass.getDeclaredConstructor().newInstance();
+            ((Proxy) proxyInstance).setHandler(new LazyListMethodHandler(delegate, replyIds, this.jedis));
+        } catch (Exception e) {
+            e.printStackTrace();
         }
-        return null;
-    }
-
-    private String serializeList(List<?> list) {
-        return String.join(",", list.stream().map(Object::toString).toArray(String[]::new));
-    }
-
-    private List<Object> deserializeList(Class<?> type, String data) {
-        List<Object> list = new ArrayList<>();
-        if (data != null && !data.isEmpty()) {
-            String[] items = data.split(",");
-            for (String item : items) {
-                try {
-                    Object obj = type.getDeclaredConstructor().newInstance();
-                    Field idField = type.getDeclaredField("postId");
-                    idField.setAccessible(true);
-                    idField.set(obj, Integer.parseInt(item));
-                    list.add(obj);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-        return list;
+        return proxyInstance;
     }
 
     private Object castValue(Class<?> type, String value) {
@@ -150,5 +141,53 @@ public class Session {
         }
         return null;
     }
-}
 
+    public Object loadLazy(Object obj) {
+        // Optionally implement separate lazy load logic here
+        return load(obj);
+    }
+
+    public void close() {
+        jedis.close();
+    }
+
+    // ---------------------------
+    // Lazy Loading Proxy Handler
+    // ---------------------------
+    private static class LazyListMethodHandler implements MethodHandler {
+        private List<Post> delegate;
+        private String[] replyIds;
+        private boolean loaded = false;
+        private Jedis jedis;
+
+        public LazyListMethodHandler(List<Post> delegate, String[] replyIds, Jedis jedis) {
+            this.delegate = delegate;
+            this.replyIds = replyIds;
+            this.jedis = jedis;
+        }
+
+        @Override
+        public Object invoke(Object self, Method thisMethod, Method proceed, Object[] args) throws Throwable {
+            if (!loaded) {
+                // Load full reply objects from Redis for each reply id
+                for (String id : replyIds) {
+                    if (!id.isEmpty()) {
+                        int replyId = Integer.parseInt(id);
+                        String key = "post:" + replyId;
+                        Map<String, String> data = jedis.hgetAll(key);
+                        if (!data.isEmpty()) {
+                            Post fullReply = new Post();
+                            fullReply.setPostId(replyId);
+                            fullReply.setRecord(new Record(data.get("postContent")));
+                            fullReply.setCreatedAt(data.get("createdAt"));
+                            // Optionally, load additional fields if necessary
+                            delegate.add(fullReply);
+                        }
+                    }
+                }
+                loaded = true;
+            }
+            return thisMethod.invoke(delegate, args);
+        }
+    }
+}
