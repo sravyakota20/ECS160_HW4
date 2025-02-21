@@ -1,9 +1,6 @@
-package com.ecs160.hw2;
+package com.ecs160.hw2.persistence;
 
-import com.ecs160.hw2.persistence.Persistable;
-import com.ecs160.hw2.persistence.PersistableField;
-import com.ecs160.hw2.persistence.PersistableId;
-import com.ecs160.hw2.persistence.PersistableListField;
+import com.ecs160.hw2.Post;
 import redis.clients.jedis.Jedis;
 import java.lang.reflect.Field;
 import java.util.*;

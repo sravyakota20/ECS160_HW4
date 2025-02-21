@@ -1,41 +1,30 @@
 package com.ecs160.hw2;
 
-import com.google.gson.JsonArray;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
+import com.google.gson.*;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
 
 public class JsonParserUtility {
     private static int numOfPosts = 0;
     private static int numOfWordsInLongestPost = 0;
-    // Each index in the array is the number of replies corresponding to ith post.
-    // For example, numberOfRepliesOfPostN[0] is the number of replies under post 0. numberOfRepliesOfPostN[1] is the number of replies under post 1
     private static ArrayList<Integer> numberOfRepliesOfPostN = new ArrayList<>();
 
-    public static int getNumOfPosts(){
-        return numOfPosts;
-    }
+    public static int getNumOfPosts() { return numOfPosts; }
 
-    public static int getNumOfWordsInLongestPost(){
-        return numOfWordsInLongestPost;
-    }
+    public static int getNumOfWordsInLongestPost() { return numOfWordsInLongestPost; }
 
-    public static ArrayList<Integer> getNumberOfRepliesOfPostN(){
-        return numberOfRepliesOfPostN;
-    }
+    public static ArrayList<Integer> getNumberOfRepliesOfPostN() { return numberOfRepliesOfPostN; }
 
-    public static void parseJsonFile() {
-        // Initialize DatabaseManager object
-        DatabaseManager db = new DatabaseManager();
-
-        // Read JSON file
+    /**
+     * Parses the input.json file and stores posts & replies in Redis.
+     */
+    public static void parseJsonFile(RedisManager redisManager) {
         JsonElement element = JsonParser.parseReader(new InputStreamReader(
                 JsonParserUtility.class.getClassLoader().getResourceAsStream("input.json")
         ));
 
-        if (element.isJsonObject()) {
+        redisManager.clearDatabase();
+        if (element != null && element.isJsonObject()) {
             JsonObject jsonObject = element.getAsJsonObject();
             JsonArray feedArray = jsonObject.getAsJsonArray("feed");
 
@@ -43,77 +32,54 @@ public class JsonParserUtility {
                 if (feedObject.isJsonObject() && feedObject.getAsJsonObject().has("thread")) {
                     JsonObject threadObject = feedObject.getAsJsonObject().getAsJsonObject("thread");
 
-                    // Get the post logic
+                    // Parse the post
                     if (threadObject.has("post")) {
                         Post post = parsePost(threadObject.getAsJsonObject("post"));
-                        numOfPosts += 1;
-                        //Save post to postgres
+                        numOfPosts++;
+
+                        // Track longest post length
                         int numWords = post.getNumberOfWords();
-                        if(numWords > numOfWordsInLongestPost){
+                        if (numWords > numOfWordsInLongestPost) {
                             numOfWordsInLongestPost = numWords;
                         }
-                        int postId = db.addPost(numWords);
-                        if (postId != -1){
-                            int numReplies = 0;
-                            ArrayList<Reply> replies = new ArrayList<>();
-                            if(threadObject.has("replies")){
-                                JsonArray repliesArray = threadObject.getAsJsonArray("replies");
-                                replies = parseReplies(repliesArray, postId, db);
-                                for (Reply reply: replies){
-                                    int numWordsInReply = reply.getNumWords();
-                                    int postIdForReply = reply.getPostId();
-                                    String replyCreatedAt = reply.getCreatedAt();
-                                    // Save reply in the database
-                                    db.addReply(postIdForReply, numWordsInReply, replyCreatedAt);
-                                }
+
+                        // Store post in Redis
+                        redisManager.addPost(post.getPostId(), post.getPostContent(), post.getCreatedAt());
+                        //System.out.println("adding Post " + post.getPostId());
+                        if (threadObject.has("replies")) {
+                            JsonArray repliesArray = threadObject.getAsJsonArray("replies");
+                            // Only process first-level replies; ignore replies-to-replies as required
+                            ArrayList<Reply> replies = parseReplies(repliesArray, post.getPostId(), redisManager);
+
+                            for (Reply reply : replies) {
+                                //System.out.println("adding replies to " + post.getPostId());
+                                redisManager.addReply(post.getPostId(), reply.getPostId(), reply.getContent(), reply.getCreatedAt());
                             }
-
                         }
-
                     }
-
-
                 }
             }
         }
-
-        return;
     }
 
-    private static ArrayList<Reply> parseReplies(JsonArray repliesArray, int parentPostId, DatabaseManager db) {
-        int replyCount = 0; // Track number of replies
+    /**
+     * Parses replies and associates them with the given parent post ID in Redis.
+     * Note: Nested replies (replies-to-replies) are ignored.
+     */
+    private static ArrayList<Reply> parseReplies(JsonArray repliesArray, int parentPostId, RedisManager redisManager) {
+        int replyCount = 0;
         ArrayList<Reply> replies = new ArrayList<>();
 
-        int i = 0;
         for (JsonElement replyElement : repliesArray) {
             if (replyElement.isJsonObject()) {
-                JsonObject replyObject = replyElement.getAsJsonObject();
-                if (replyObject.has("post")) {
-                    JsonObject postObject = replyObject.getAsJsonObject("post");
-                    replies.add(new Reply());
-                    replies.get(i).setPostId(parentPostId);
-                    // Extract reply text and count words
-                    int numWords = 0;
-                    String text = "";
-                    String createdAt = "";
+                JsonObject replyObject = replyElement.getAsJsonObject().getAsJsonObject("post");
+                Reply reply = parseReply(replyObject, parentPostId);
 
-                    if (postObject.has("record")) {
-                        JsonObject jsonRecord = postObject.getAsJsonObject("record");
-                        if (jsonRecord.has("text")) {
-                            text = jsonRecord.get("text").getAsString();
-                            numWords = countWords(text);
-                            replies.get(i).setNumWords(numWords);
-                        }
-                        if (jsonRecord.has("createdAt")) {
-                            createdAt = jsonRecord.get("createdAt").getAsString();
-                            replies.get(i).setCreatedAt(createdAt);
-                        }
-                    }
-                    i++;
-
-                    replyCount++; // Increment reply count for this post
-
-                }
+                // Store reply in Redis
+                //redisManager.addReply(parentPostId, reply.getPostId(), reply.getContent(), reply.getCreatedAt());
+                replies.add(reply);
+                replyCount++;
+                // Nested replies are intentionally ignored
             }
         }
 
@@ -121,32 +87,36 @@ public class JsonParserUtility {
         return replies;
     }
 
+    /**
+     * Parses a post from a JSON object.
+     */
     private static Post parsePost(JsonObject postObject) {
-        int numWords = 0;
-        String text = "";
+        String uri = postObject.has("uri") ? postObject.get("uri").getAsString() : "";
+        int postId = extractPostIdFromUri(uri);
+        String text = postObject.has("record") ? postObject.getAsJsonObject("record").get("text").getAsString() : "";
+        String createdAt = postObject.has("record") ? postObject.getAsJsonObject("record").get("createdAt").getAsString() : "";
 
-        // Extract post text from "record" and count words
-        if (postObject.has("record")) {
-            JsonObject jsonRecord = postObject.getAsJsonObject("record");
-            if (jsonRecord.has("text")) {
-                text = jsonRecord.get("text").getAsString();
-                numWords = countWords(text);
-            }
-        }
-
-        // Create Record and Post objects
-        // Record record = new Record(text);
-
-        Post post = new Post(numWords, text);
-
-        return post;
+        return new Post(postId, text, createdAt);
     }
 
-    // Utility method to count words in a string
-    private static int countWords(String text) {
-        if (text == null || text.trim().isEmpty()) {
-            return 0;
-        }
-        return text.trim().split("\\s+").length; // Splitting by whitespace
+    /**
+     * Parses a reply from a JSON object.
+     */
+    private static Reply parseReply(JsonObject replyObject, int parentPostId) {
+        String uri = replyObject.has("uri") ? replyObject.get("uri").getAsString() : "";
+        int replyId = extractPostIdFromUri(uri);
+        String text = replyObject.has("record") ? replyObject.getAsJsonObject("record").get("text").getAsString() : "";
+        String createdAt = replyObject.has("record") ? replyObject.getAsJsonObject("record").get("createdAt").getAsString() : "";
+
+        return new Reply(replyId, text, createdAt, parentPostId);
+    }
+
+    /**
+     * Extracts post ID from the `uri` field.
+     */
+    private static int extractPostIdFromUri(String uri) {
+        if (uri.isEmpty()) return -1;
+        String[] parts = uri.split("/");
+        return parts.length > 0 ? parts[parts.length - 1].hashCode() : -1;  // Use hashCode to convert to int
     }
 }
