@@ -6,5 +6,5 @@
 # Sravya Kota (02/20)
   - Code assumes the input file name as "input.json".
   - Annotation classes are in the persistence package.
-    
+  - Added LazyLoad annotation
     
