@@ -11,8 +11,7 @@ class PostTest {
 
     @BeforeEach
     void setUp() {
-        Record record = new Record("Test content");
-        post = new Post(101, "5", record.getText());
+        post = new Post(101, "Test Content", "2023-07-17T21:13:20.284Z");
     }
 
     @AfterEach
@@ -21,7 +20,7 @@ class PostTest {
 
     @Test
     void testPostCreation() {
-        assertEquals(5, post.getNumberOfWords());
-        assertEquals("Test content", post.getRecord().getText());
+        assertEquals(2, post.getNumberOfWords());
+        assertEquals("Test Content", post.getText());
     }
 }

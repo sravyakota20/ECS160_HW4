@@ -12,6 +12,7 @@ public class RedisManager {
         this.jedis = new Jedis(REDIS_HOST, REDIS_PORT);
     }
 
+    /*
     // Add a post to Redis (with createdAt timestamp)
     public void addPost(int postId, String content, String createdAt) {
         String postKey = "post:" + postId;
@@ -99,6 +100,10 @@ public class RedisManager {
     public String getPostContent(int postId) {
         Post post = getPost(postId);  // Fetch post object
         return (post != null) ? post.getPostContent() : "";  // Return content safely
+    }
+*/
+    public Jedis getJedis() {
+        return jedis;
     }
 
     // Close the Redis connection

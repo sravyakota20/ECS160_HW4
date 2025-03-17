@@ -17,23 +17,29 @@ public class Post {
     private String createdAt; // Timestamp for the post
 
     @PersistableField
-    private Record record;
+    private String text;
 
-    @PersistableListField(className = "com.ecs160.hw2.Post")
+    @PersistableListField(className = "com.ecs160.hw2.Reply")
     @LazyLoad
-    private List<Post> replies;
+    private List<Reply> replies;
 
     // Default Constructor
     public Post(){
         this.numWords = 0;
-        this.record = null;
+        this.text = "";
         this.createdAt = "";
+        this.replies = new ArrayList<>();
+    }
+
+    public Post(int postId) {
+        this.postId = postId;
+        this.text = "";
         this.replies = new ArrayList<>();
     }
 
     public Post(int postId, String postContent, String createdAt) {
         this.postId = postId;
-        this.record = new Record(postContent);
+        this.text = postContent;
         this.numWords = postContent.split("\\s+").length;
         this.createdAt = createdAt;
         this.replies = new ArrayList<>();
@@ -45,11 +51,11 @@ public class Post {
 
     public String getCreatedAt() { return createdAt; }
 
-    public Record getRecord() { return record; }
+    public String getText() { return text; }
 
-    public String getPostContent() { return record.getText(); }
+    public String getPostContent() { return text; }
 
-    public List<Post> getReplies() { return replies; }
+    public List<Reply> getReplies() { return replies; }
 
     public void setPostId(int postId) { this.postId = postId; }
 
@@ -57,7 +63,13 @@ public class Post {
 
     public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
 
-    public void setRecord(Record record) { this.record = record; }
+    public void setText(String text) {
+        this.text = text;
+    }
 
-    public void setReplies(List<Post> replies) { this.replies = replies; }
+    public void setReplies(List<Reply> replies) { this.replies = replies; }
+
+    public String toString() {
+        return "PostId: " + postId + " Content: " + getPostContent() + " Replies: " + replies.size();
+    }
 }
