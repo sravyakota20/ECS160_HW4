@@ -1,10 +1,11 @@
 package com.ecs160.hw4;
 
 import com.ecs160.hw4.persistence.Session;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 
 import java.io.InputStream;
-import java.util.List;
-import java.util.Scanner;
+import java.util.*;
 
 public class SocialMediaAnalyzerDriver {
     public static void main(String[] args) {
@@ -36,52 +37,6 @@ public class SocialMediaAnalyzerDriver {
             session.add(post);
         }
         session.persistAll();
-
-        /*
-        // Decide how to analyze
-        if (ConfigurationManager.NON_WEIGHTED.equalsIgnoreCase(ConfigurationManager.getInstance().getAnalysisType())) {
-            runWeightedAnalysis(posts);
-        } else {
-            runNonWeightedAnalysis(posts);
-        }
-         */
-
-        // Prompt the user for a post ID to fetch via the persistence layer
-        /*Scanner scanner = new Scanner(System.in);
-        while (true) {
-            System.out.print("\nEnter post ID to fetch (or -1 to exit): ");
-            if (!scanner.hasNextInt()) {
-                System.out.println("Please enter a valid integer.");
-                scanner.next(); // consume the invalid input
-                continue;
-            }
-            int postId = scanner.nextInt();
-
-            if (postId == -1) {
-                System.out.println("Exiting program. Goodbye!");
-                break;
-            }
-
-            // Create a minimal Post object with just the ID (requires a constructor in Post.java)
-            Post queryPost = new Post(postId);
-            Post loadedPost = (Post) session.load(queryPost);
-
-            if (loadedPost != null) {
-                System.out.println("\nPost ID: " + loadedPost);
-                System.out.println("> " + loadedPost.getPostContent());
-                if (loadedPost.getReplies() != null && !loadedPost.getReplies().isEmpty()) {
-                    System.out.println("Replies:");
-                    for (Reply reply : loadedPost.getReplies()) {
-                        System.out.println("  > --> " + reply.getContent());
-                    }
-                } else {
-                    System.out.println("No replies for this post.");
-                }
-            } else {
-                System.out.println("Post not found.");
-            }
-        }
-        scanner.close();*/
 
         // Determine max words across all posts (needed for weighted analysis)
         int maxWords = 0;
@@ -132,58 +87,43 @@ public class SocialMediaAnalyzerDriver {
 
         // Call LLAMA for HashTagging
         HashTagger ht = new HashTagger();
-        for (SocialMediaComponent comp : posts) {
+        List<SocialMediaComponent> top10posts = getTop10Posts(posts);
+        for (int i = 0; i < top10posts.size() && i < 10; i++) {
+            SocialMediaComponent comp = top10posts.get(i);
             if (comp instanceof Thread) {
                 Thread t = (Thread) comp;
-                String content = t.getMainPost().getText();
-                System.out.println(ht.getOllamaResposne(content));
+                String hashTag = ht.getOllamaResposne((t.getMainPost().getText()));
+                // Wrap the component with a hashtag decorator.
+                top10posts.set(i, new HashtagDecorator(comp, hashTag));
+                System.out.println("Hashtag for post " + t.getMainPost().getText() + " is " + hashTag);
             }
         }
     }
 
-/*
-    private static void runWeightedAnalysis(List<SocialMediaComponent> posts) {
-        System.out.println("\nRunning WEIGHTED analysis...");
-        double totalScore = 0;
-
-        for (SocialMediaComponent post : posts) {
-            int postLikes = post.getLikeCount();
-            int replyCount = 0;
-
-            if (post instanceof Thread) {
-                replyCount = ((Thread) post).getReplies().size();
+    private static List<SocialMediaComponent> getTop10Posts(List<SocialMediaComponent> components) {
+        // Sort components descending by like count of main post (if composite) or component directly (if leaf)
+        Collections.sort(components, new Comparator<SocialMediaComponent>() {
+            @Override
+            public int compare(SocialMediaComponent o1, SocialMediaComponent o2) {
+                int likes1 = getComponentLikeCount(o1);
+                int likes2 = getComponentLikeCount(o2);
+                return Integer.compare(likes2, likes1);  // descending order
             }
+        });
 
-            double postScore = (postLikes * 2.0) + (replyCount * 1.5);
-            totalScore += postScore;
-
-            post.printPost();
-            System.out.printf("Weighted Score: %.2f\n\n", postScore);
+        // Return the first 10, or fewer if there aren't 10
+        List<SocialMediaComponent> top10 = new ArrayList<>();
+        for (int i = 0; i < Math.min(10, components.size()); i++) {
+            top10.add(components.get(i));
         }
-
-        System.out.printf("Total Weighted Score for all posts: %.2f\n", totalScore);
+        return top10;
     }
 
-    private static void runNonWeightedAnalysis(List<SocialMediaComponent> posts) {
-        System.out.println("\nRunning NON-WEIGHTED analysis...");
-        int totalPosts = posts.size();
-        int totalReplies = 0;
-        int totalLikes = 0;
-
-        for (SocialMediaComponent post : posts) {
-            post.printPost();
-
-            if (post instanceof Thread) {
-                int count = ((Thread) post).getReplies().size();
-                totalReplies += count;
-                System.out.println("Reply count: " + count + "\n");
-            }
+    private static int getComponentLikeCount(SocialMediaComponent comp) {
+        if (comp instanceof Thread) {
+            return ((Thread) comp).getMainPost().getLikeCount();
+        } else {
+            return comp.getLikeCount();
         }
-
-        System.out.println("Total Top-Level Posts: " + totalPosts);
-        System.out.println("Total Replies: " + totalReplies);
-        System.out.println("Total Post + Reply Count: " + (totalPosts + totalReplies));
-        System.out.println("Non-Weighted Score (sum of likes): " + totalLikes);
     }
- */
 }
