@@ -1,4 +1,4 @@
-package com.ecs160.hw2;
+package com.ecs160.hw4;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -11,7 +11,7 @@ class PostTest {
 
     @BeforeEach
     void setUp() {
-        post = new Post(101, "Test Content", "2023-07-17T21:13:20.284Z");
+        post = new Post(101, "Test Content", "2023-07-17T21:13:20.284Z", 10);
     }
 
     @AfterEach
