@@ -1,8 +1,8 @@
-package com.ecs160.hw2;
+package com.ecs160.hw4;
 
-import com.ecs160.hw2.persistence.Persistable;
-import com.ecs160.hw2.persistence.PersistableId;
-import com.ecs160.hw2.persistence.PersistableField;
+import com.ecs160.hw4.persistence.Persistable;
+import com.ecs160.hw4.persistence.PersistableId;
+import com.ecs160.hw4.persistence.PersistableField;
 
 @Persistable
 public class Reply {

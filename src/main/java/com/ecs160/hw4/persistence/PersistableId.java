@@ -1,4 +1,4 @@
-package com.ecs160.hw2.persistence;
+package com.ecs160.hw4.persistence;
 
 import java.lang.annotation.ElementType;
 import java.lang.annotation.Retention;
